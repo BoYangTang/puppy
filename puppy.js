@@ -1,9 +1,10 @@
 var readline = require('readline');
 var fs = require('fs');
-var output = console.log;
+var fileout = fs.createWriteStream('results.txt');
+var output = fileout.write;
 
 var manufacs = [];
-var manufacRegex = [];
+var manufacRegex = {};
 var manufacDict = {};
 
 // Product           Object
@@ -31,7 +32,7 @@ function loadProducts () {
 
     if ( manufacs.indexOf( product.manufacturer ) < 0 ) {
       manufacs.push( product.manufacturer );
-      manufacRegex.push( new RegExp(product.manufacturer, 'i') );
+      manufacRegex[ product.manufacturer ] = new RegExp(product.manufacturer, 'i');
       manufacDict[ product.manufacturer ] = [];
     }
 
@@ -41,8 +42,31 @@ function loadProducts () {
   });
 
   rl.on('close', function() {
+    console.log('done loading products');
     loadListings();
   });
+}
+
+// creates a regular expression that matches key words in the string
+function createMatcher( string ) {
+  var tokens = keywordify(string);
+  var len = tokens.length;
+  var expression = '';
+  var flags = 'ig';
+  tokens.forEach( function (token, index) {
+    expression += '(' + token + ')';
+    if ( index < len - 1 )
+      expression += '(\\s|-)*';
+  });
+  expression += '(\\s|$)';
+  return new RegExp(expression, flags);
+}
+
+function keywordify( string ) {
+  var tokens;
+  string = string.replace(/(\s|-)+/, '\n');
+  tokens = string.split('\n');
+  return tokens;
 }
 
 function loadListings () {
@@ -55,6 +79,7 @@ function loadListings () {
   rl.on('line', matchListing);
 
   rl.on('close', function() {
+    console.log('done processing listings');
     printResults();
   });
 }
@@ -71,8 +96,8 @@ function matchListing ( listingString ) {
 
 function matchManufacturer ( listing ) {
   var matches = [];
-  manufacs.forEach( function ( manufacturer, index ) {
-    if ( manufacRegex[index].test( listing.title ) ) {
+  manufacs.forEach( function ( manufacturer ) {
+    if ( manufacRegex[manufacturer].test( listing.title ) ) {
       matches.push(manufacturer);
     }
   });
@@ -83,21 +108,27 @@ function matchProduct ( listing, manufacturerArray ) {
   var matches = [];
   manufacturerArray.forEach( function ( manufacturer ) {
     manufacDict[manufacturer].some( function ( product ) {
-      if ( product.regex.test( listing.title ) ) {
+      if ( product.regex.test( listing.title ) && manufacRegex[manufacturer].test( listing.manufacturer ) ) {
         matches.push( product );
         return true;
       }
       return false;
     });
   });
-  if ( matches.length > 1 ) console.log( '2137812321', listing.title, matches );
+  // if ( matches.length > 1 ) console.log( '2137812321', listing.title, matches );
   return matches;
 }
 
 function printResults() {
+  var result;
+  console.log('printing');
   manufacs.forEach( function ( manufacturer ) {
     manufacDict[manufacturer].forEach( function ( product ) {
-      output({ product_name: product.product_name, listings: product.listings });
+      result = { product_name: product.product_name, listings: product.listings };
+      if ( !result.listings.length ) {
+        result.keywords = product.regex;
+      }
+      fileout.write( JSON.stringify( result ) + '\n' );
     });
   });
 }
